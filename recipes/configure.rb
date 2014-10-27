@@ -3,6 +3,20 @@ include_recipe 'database'
 include_recipe 'postgresql::ruby'
 include_recipe 'repmgr::dumb_repmgr_id'
 
+# Update node data with current real-time master or slave values
+repmgr_installed = %x{sudo which repmgr}
+if(repmgr_installed.to_s.include?('/')) # skip when repmgr not installed
+  output = %x{sudo -u postgres repmgr -f #{node[:repmgr][:config_file_path]} cluster show}
+  master = output.split("\n").detect{|s| s.include?('master')}
+  if(!master.to_s.empty? && master.to_s.include?(node[:ipaddress])) then
+    node.normal[:repmgr][:replication][:role] = "master"
+    node.normal[:repmgr][:replication_role] = "master"
+  else
+    node.normal[:repmgr][:replication][:role] = "slave"
+    node.normal[:repmgr][:replication_role] = "slave"
+  end
+end
+
 # create rep user and rep db
 
 if(node[:repmgr][:replication][:role] == 'master')
@@ -130,7 +144,7 @@ else
   node.set[:postgresql][:config][:hot_standby_feedback] = node[:repmgr][:replication][:standby_feedback]
   node.set[:postgresql][:config][:max_standby_streaming_delay] = node[:repmgr][:replication][:max_streaming_delay]
   node.default[:postgresql][:config][:listen_addresses] = node[:repmgr][:replication][:listen_addresses]
-  
+
   if(master_node)
     node.default[:repmgr][:addressing][:master] = master_node[:repmgr][:addressing][:self]
     file '/var/lib/postgresql/.ssh/known_hosts' do
